@@ -2,7 +2,7 @@ import os
 import io
 import base64
 import pandas as pd
-from flask import Flask, request, jsonify, render_template
+from flask import Flask, request, jsonify
 from groq import Groq
 from dotenv import load_dotenv
 
@@ -273,9 +273,6 @@ def handle_chat():
         app.logger.error(f"Chat error: {str(e)}")
         return jsonify({'error': str(e)}), 500
 
-@app.route('/')
-def index():
-    return render_template('index.html')
 
 if __name__ == '__main__':
     app.run(debug=True)
