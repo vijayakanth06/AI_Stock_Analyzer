@@ -5,7 +5,7 @@ import pandas as pd
 from flask import Flask, request, jsonify, render_template
 from groq import Groq
 from dotenv import load_dotenv
-import uuid
+
 from flask_cors import CORS
 import warnings
 import logging
