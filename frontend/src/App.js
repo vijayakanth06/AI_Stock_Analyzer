@@ -89,7 +89,7 @@ function App() {
     formData.append('file', file);
 
     try {
-      const response = await fetch('http://localhost:5000/api/upload', {
+      const response = await fetch('https://ai-stock-analyzer-eo95.onrender.com/api/upload', {
         method: 'POST',
         body: formData,
       });
@@ -136,7 +136,7 @@ function App() {
     setMessage('');
 
     try {
-      const response = await fetch('http://localhost:5000/api/chat', {
+      const response = await fetch('https://ai-stock-analyzer-eo95.onrender.com/api/chat', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
