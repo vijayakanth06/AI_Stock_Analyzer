@@ -13,7 +13,9 @@ function App() {
   const [chatLoading, setChatLoading] = useState(false);
   const [error, setError] = useState(null);
   const [isDarkTheme, setIsDarkTheme] = useState(true);
+  const [isChatOpen, setIsChatOpen] = useState(false);
   const fileInputRef = useRef(null);
+  const chatContainerRef = useRef(null);
 
   // Clear errors after 5 seconds
   useEffect(() => {
@@ -28,10 +30,52 @@ function App() {
     document.documentElement.setAttribute('data-theme', isDarkTheme ? 'dark' : 'light');
   }, [isDarkTheme]);
 
+  // Auto-scroll chat to bottom when new messages arrive
+  useEffect(() => {
+    if (chatContainerRef.current) {
+      chatContainerRef.current.scrollTop = chatContainerRef.current.scrollHeight;
+    }
+  }, [chatHistory, chatLoading]);
+
   const handleFileChange = (e) => {
     setFile(e.target.files[0]);
     setError(null);
   };
+
+  const formatMessage = (message) => {
+  // First remove all markdown symbols
+  const cleanMessage = message
+    .replace(/^#+\s*/gm, '') // Remove headings
+    .replace(/^\*\s*/gm, '• ') // Convert bullets to dots
+    .replace(/^\+\s*/gm, '• ') // Convert + to bullets
+    .replace(/\*\*(.*?)\*\*/g, '$1') // Remove bold markers
+    .trim();
+
+  // Then split into paragraphs
+  const paragraphs = cleanMessage.split('\n\n');
+
+  return (
+    <div className="clean-message">
+      {paragraphs.map((para, i) => {
+        if (para.trim() === '') return null;
+        
+        // Check if this is a list item
+        if (para.startsWith('• ')) {
+          const listItems = para.split('\n');
+          return (
+            <ul key={i} className="clean-list">
+              {listItems.map((item, j) => (
+                <li key={j}>{item.replace('• ', '')}</li>
+              ))}
+            </ul>
+          );
+        }
+        
+        return <p key={i} className="clean-paragraph">{para}</p>;
+      })}
+    </div>
+  );
+};
 
   const handleUpload = async () => {
     if (!file) {
@@ -152,6 +196,14 @@ function App() {
     setIsDarkTheme(!isDarkTheme);
   };
 
+  const toggleChat = () => {
+    setIsChatOpen(!isChatOpen);
+  };
+
+  const handleSuggestionClick = (suggestion) => {
+    setMessage(suggestion);
+  };
+
   return (
     <div className="app-container">
       {/* Error Toast */}
@@ -229,9 +281,36 @@ function App() {
             </div>
           </div>
 
-          {/*Portfolio Charts*/}
+          {/* Portfolio Results */}
           {charts.total && (
             <div className="portfolio-results">
+              {/* Portfolio Summary */}
+              {totals && (
+                <div className="summary-card">
+                  <h3 className="summary-title">Portfolio Summary</h3>
+                  <div className="summary-grid">
+                    <div className="summary-item">
+                      <div className="summary-label">Total Invested</div>
+                      <div className="summary-value">{formatCurrency(totals.total_investment)}</div>
+                    </div>
+                    <div className="summary-item">
+                      <div className="summary-label">Current Value</div>
+                      <div className={`summary-value ${getPnLColor(totals.current_value - totals.total_investment)}`}>
+                        {formatCurrency(totals.current_value)}
+                      </div>
+                    </div>
+                    <div className="summary-item">
+                      <div className="summary-label">Total P&L</div>
+                      <div className={`summary-value ${getPnLColor(totals.total_pnl)}`}>
+                        {formatCurrency(totals.total_pnl)}
+                        <span className="pnl-percent">({totals.pnl_percent?.toFixed(2)}%)</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Portfolio Charts */}
               <div className="charts-grid">
                 <div className="chart-card">
                   <h3 className="chart-title">Total Allocation</h3>
@@ -264,32 +343,6 @@ function App() {
                   </div>
                 </div>
               </div>
-
-              {/* Portfolio Summary */}
-              {totals && (
-                <div className="summary-card">
-                  <h3 className="summary-title">Portfolio Summary</h3>
-                  <div className="summary-grid">
-                    <div className="summary-item">
-                      <div className="summary-label">Total Invested</div>
-                      <div className="summary-value">{formatCurrency(totals.total_investment)}</div>
-                    </div>
-                    <div className="summary-item">
-                      <div className="summary-label">Current Value</div>
-                      <div className={`summary-value ${getPnLColor(totals.current_value - totals.total_investment)}`}>
-                        {formatCurrency(totals.current_value)}
-                      </div>
-                    </div>
-                    <div className="summary-item">
-                      <div className="summary-label">Total P&L</div>
-                      <div className={`summary-value ${getPnLColor(totals.total_pnl)}`}>
-                        {formatCurrency(totals.total_pnl)}
-                        <span className="pnl-percent">({totals.pnl_percent?.toFixed(2)}%)</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
 
               {/* Portfolio Table */}
               {tableData.length > 0 && (
@@ -330,76 +383,98 @@ function App() {
             </div>
           )}
         </div>
+      </div>
 
-        {/* Chat Advisor */}
-        <div className="chat-section">
-          <div className="section-header">
-            <h2 className="section-title">AI Advisor</h2>
-            <div className="section-divider"></div>
-          </div>
-          
-          <div className="chat-container">
-            <div className="chat-messages">
-              {chatHistory.length === 0 ? (
-                <div className="chat-empty">
-                  <div className="empty-icon">🤖</div>
-                  <p>Ask me anything about your portfolio or the stock market</p>
-                  <div className="suggested-questions">
-                    <span className="suggestion-chip">Portfolio analysis</span>
-                    <span className="suggestion-chip">Risk assessment</span>
-                    <span className="suggestion-chip">Market trends</span>
-                  </div>
-                </div>
-              ) : (
-                chatHistory.map((chat, i) => (
-                  <div key={i} className={`message ${chat.sender === 'user' ? 'user-message' : 'ai-message'}`}>
-                    <div className="message-avatar">
-                      {chat.sender === 'user' ? '👤' : '🤖'}
-                    </div>
-                    <div className="message-content">
-                      {chat.message.split('\n').map((para, j) => (
-                        <p key={j}>{para}</p>
-                      ))}
-                    </div>
-                  </div>
-                ))
-              )}
-              {chatLoading && (
-                <div className="message ai-message">
-                  <div className="message-avatar">🤖</div>
-                  <div className="message-content typing-indicator">
-                    <div className="typing-dots">
-                      <span></span>
-                      <span></span>
-                      <span></span>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
+      {/* Chat Button */}
+      <button className={`chat-button ${isChatOpen ? 'open' : ''}`} onClick={toggleChat}>
+        <svg className="chat-icon" fill="currentColor" viewBox="0 0 20 20">
+          <path fillRule="evenodd" d="M18 10c0 3.866-3.582 7-8 7a8.841 8.841 0 01-4.083-.98L2 17l1.338-3.123C2.493 12.767 2 11.434 2 10c0-3.866 3.582-7 8-7s8 3.134 8 7zM7 9H5v2h2V9zm8 0h-2v2h2V9zM9 9h2v2H9V9z" clipRule="evenodd" />
+        </svg>
+      </button>
 
-            <div className="chat-input-container">
-              <div className="chat-input-wrapper">
-                <textarea
-                  value={message}
-                  onChange={(e) => setMessage(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  placeholder="Ask about stocks, portfolio analysis, or market insights..."
-                  className="chat-input"
-                  rows="1"
-                  disabled={chatLoading}
-                />
-                <button
-                  onClick={handleSendMessage}
-                  disabled={chatLoading || !message.trim()}
-                  className="send-button"
+      {/* Chat Popup */}
+      <div className={`chat-popup ${isChatOpen ? 'open' : ''}`}>
+        <div className="chat-popup-header">
+          <h3>AI Portfolio Advisor</h3>
+          <button className="close-chat" onClick={toggleChat}>
+            <svg className="close-icon" fill="currentColor" viewBox="0 0 20 20">
+              <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+            </svg>
+          </button>
+        </div>
+        
+        <div className="chat-popup-content" ref={chatContainerRef}>
+          {chatHistory.length === 0 ? (
+            <div className="chat-empty">
+              <div className="empty-icon">🤖</div>
+              <p>Ask me anything about your portfolio or the stock market</p>
+              <div className="suggested-questions">
+                <button 
+                  className="suggestion-chip"
+                  onClick={() => handleSuggestionClick("Analyze my portfolio performance")}
                 >
-                  <svg className="send-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-                  </svg>
+                  Analyze my portfolio
+                </button>
+                <button 
+                  className="suggestion-chip"
+                  onClick={() => handleSuggestionClick("What is my risk exposure?")}
+                >
+                  Risk assessment
+                </button>
+                <button 
+                  className="suggestion-chip"
+                  onClick={() => handleSuggestionClick("Suggest improvements for my portfolio")}
+                >
+                  Improvement suggestions
                 </button>
               </div>
             </div>
+          ) : (
+            chatHistory.map((chat, i) => (
+              <div key={i} className={`message ${chat.sender === 'user' ? 'user-message' : 'ai-message'}`}>
+                <div className="message-avatar">
+                  {chat.sender === 'user' ? '👤' : '🤖'}
+                </div>
+                <div className="message-content">
+                  {formatMessage(chat.message)}
+                </div>
+              </div>
+            ))
+          )}
+          {chatLoading && (
+            <div className="message ai-message">
+              <div className="message-avatar">🤖</div>
+              <div className="message-content typing-indicator">
+                <div className="typing-dots">
+                  <span></span>
+                  <span></span>
+                  <span></span>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="chat-popup-input">
+          <div className="chat-input-wrapper">
+            <textarea
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="Ask about stocks, portfolio analysis, or market insights..."
+              className="chat-input"
+              rows="1"
+              disabled={chatLoading}
+            />
+            <button
+              onClick={handleSendMessage}
+              disabled={chatLoading || !message.trim()}
+              className="send-button"
+            >
+              <svg className="send-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+              </svg>
+            </button>
           </div>
         </div>
       </div>

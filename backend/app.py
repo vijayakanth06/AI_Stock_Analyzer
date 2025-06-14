@@ -17,15 +17,11 @@ logging.getLogger('matplotlib.font_manager').disabled = True
 load_dotenv()
 
 app = Flask(__name__)
-app.config['UPLOAD_FOLDER'] = 'uploads'
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16MB limit
 CORS(app)
 
 # Initialize Groq client
 groq_client = Groq(api_key=os.getenv("GROQ_API_KEY"))
-
-# Ensure upload folder exists
-os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 
 # Set matplotlib backend
 import matplotlib
@@ -69,7 +65,7 @@ def generate_pie_chart(data, title):
         plt.close(fig)
 
 def process_portfolio_csv(file_stream):
-    """Process portfolio CSV and return analyzed data"""
+    """Process portfolio CSV from file stream and return analyzed data"""
     try:
         # Read the CSV file directly from the file stream
         df = pd.read_csv(file_stream)
@@ -89,9 +85,8 @@ def process_portfolio_csv(file_stream):
         df['pnl'] = df['current_value'] - df['invested']
         df['pnl_percent'] = (df['pnl'] / df['invested']) * 100
         
-        # Categorize holdings - make sure we properly identify MF entries
+        # Categorize holdings
         if 'type' not in df.columns:
-            # Try to identify MF based on instrument name if type column doesn't exist
             df['type'] = df['instrument'].apply(
                 lambda x: 'MF' if any(word in str(x).upper() for word in ['MF', 'MUTUAL', 'FUND']) else 'EQUITY'
             )
@@ -117,13 +112,10 @@ def process_portfolio_csv(file_stream):
             }
         }
         
-        # Only include equity pie if there are equity holdings
         if not equity_df.empty:
-            # Take top 10 equity holdings to avoid overcrowded chart
             top_equity = equity_df.nlargest(10, 'invested')
             pie_data['equity'] = {row['instrument']: row['invested'] for _, row in top_equity.iterrows()}
         
-        # Only include MF pie if there are MF holdings
         if not mf_df.empty:
             pie_data['mf'] = {row['instrument']: row['invested'] for _, row in mf_df.iterrows()}
         
@@ -138,13 +130,12 @@ def process_portfolio_csv(file_stream):
         raise
 
 def clean_data(data):
-    """Recursively clean data by converting NaN/Inf to None and other non-serializable types"""
+    """Recursively clean data by converting NaN/Inf to None"""
     if isinstance(data, dict):
         return {k: clean_data(v) for k, v in data.items()}
     elif isinstance(data, (list, tuple)):
         return [clean_data(item) for item in data]
     elif isinstance(data, (int, float)):
-        # Convert NaN/Inf to None
         if pd.isna(data) or data == float('inf') or data == float('-inf'):
             return None
         return data
@@ -152,7 +143,7 @@ def clean_data(data):
 
 @app.route('/api/upload', methods=['POST'])
 def upload_file():
-    """Handle file upload and return processed data."""
+    """Handle file upload and process entirely in memory"""
     try:
         if 'file' not in request.files:
             return jsonify({'error': 'No file uploaded'}), 400
@@ -164,28 +155,27 @@ def upload_file():
         if not file.filename.lower().endswith('.csv'):
             return jsonify({'error': 'Invalid file type. Please upload a CSV file.'}), 400
 
-        # Process the file directly from the file stream
+        # Process the file directly from memory
         try:
-            processed_data = process_portfolio_csv(file.stream)
+            # Use file.stream to read directly without saving
+            file_stream = io.StringIO(file.stream.read().decode('utf-8'))
+            processed_data = process_portfolio_csv(file_stream)
             
             # Generate pie charts
             pie_charts = {}
             
-            # Total allocation chart
             if 'total' in processed_data['pie_data'] and any(v > 0 for v in processed_data['pie_data']['total'].values()):
                 pie_charts['total'] = generate_pie_chart(
                     processed_data['pie_data']['total'], 
                     'Total Portfolio Allocation'
                 )
             
-            # Equity holdings chart
             if 'equity' in processed_data['pie_data'] and processed_data['pie_data']['equity']:
                 pie_charts['equity'] = generate_pie_chart(
                     processed_data['pie_data']['equity'],
                     'Equity Holdings Breakdown'
                 )
             
-            # Mutual funds chart - added more explicit checks
             if 'mf' in processed_data['pie_data'] and processed_data['pie_data']['mf']:
                 mf_data = processed_data['pie_data']['mf']
                 if mf_data and sum(mf_data.values()) > 0:
@@ -213,7 +203,7 @@ def upload_file():
     except Exception as e:
         app.logger.error(f"Unexpected error: {str(e)}")
         return jsonify({'error': 'An unexpected error occurred'}), 500
-    
+
 @app.route('/api/chat', methods=['POST'])
 def handle_chat():
     """Handle stock-related questions"""
@@ -244,7 +234,6 @@ def handle_chat():
         
         # Add portfolio context if available
         if portfolio_data.get('totals') and portfolio_data.get('holdings'):
-            # Format holdings with their values
             holdings_list = []
             for instrument, value in portfolio_data['holdings'].items():
                 holdings_list.append(f"{instrument}: ₹{value:,.2f}")
